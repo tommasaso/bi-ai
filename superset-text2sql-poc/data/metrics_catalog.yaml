@@ -1,0 +1,38 @@
+metrics:
+  average_delay:
+    description: "Average arrival delay in seconds."
+    formula: "AVG(stop_events.arrival_delay_seconds)"
+    preferred_dataset: "stop_events"
+    supported_dimensions:
+      - line_id
+      - service_date
+      - stop_id
+      - trip_id
+
+  punctuality_rate:
+    description: "Percentage of stop events with arrival delay lower than or equal to 300 seconds."
+    formula: "SUM(CASE WHEN arrival_delay_seconds <= 300 THEN 1 ELSE 0 END) * 1.0 / COUNT(*)"
+    preferred_dataset: "stop_events"
+    supported_dimensions:
+      - line_id
+      - service_date
+      - stop_id
+
+  daily_passenger_count:
+    description: "Total number of boardings per day."
+    formula: "SUM(passenger_counts.boarding_count)"
+    preferred_dataset: "passenger_counts"
+    supported_dimensions:
+      - line_id
+      - "DATE(event_timestamp)"
+
+  vehicle_anomaly_count:
+    description: "Number of vehicle events grouped by vehicle, line or severity."
+    formula: "COUNT(*)"
+    preferred_dataset: "vehicle_events"
+    supported_dimensions:
+      - vehicle_id
+      - line_id
+      - severity
+      - event_type
+      - "DATE(event_timestamp)"
