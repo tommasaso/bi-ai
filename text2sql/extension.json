@@ -1,0 +1,27 @@
+{
+  "publisher": "bi-ai",
+  "name": "text2sql",
+  "displayName": "BI-AI Text-to-SQL",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "permissions": ["can_read"],
+  "frontend": {
+    "moduleFederation": {
+      "name": "bi_ai_text2sql",
+      "exposes": { "./index": "./src/index.tsx" }
+    },
+    "contributions": {
+      "views": [
+        {
+          "id": "bi-ai.text2sql.panel",
+          "name": "Ask AI",
+          "extensionPoint": "sqllab.rightSidebar"
+        }
+      ]
+    }
+  },
+  "backend": {
+    "entryPoint": "bi_ai.text2sql.entrypoint",
+    "files": ["src/bi_ai/text2sql/**/*.py"]
+  }
+}
