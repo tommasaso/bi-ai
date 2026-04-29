@@ -113,6 +113,15 @@ def get_or_create_role(session: requests.Session, name: str) -> int:
     return role_id
 
 
+def get_role_id_by_name(session: requests.Session, name: str) -> int:
+    resp = session.get(f"{BASE}/api/v1/security/roles/")
+    resp.raise_for_status()
+    for role in resp.json().get("result", []):
+        if role["name"] == name:
+            return role["id"]
+    raise RuntimeError(f"Role '{name}' not found")
+
+
 def get_gamma_role_id(session: requests.Session) -> int:
     resp = session.get(f"{BASE}/api/v1/security/roles/")
     resp.raise_for_status()
@@ -182,13 +191,14 @@ def main():
     dataset_ids = create_datasets(session, db_id)
 
     print("\nCreating roles...")
-    gamma_id = get_gamma_role_id(session)
+    alpha_id = get_role_id_by_name(session, "Alpha")
+    sqllib_id = get_role_id_by_name(session, "sql_lab")
     atm_role_id = get_or_create_role(session, "operator_atm")
     gtt_role_id = get_or_create_role(session, "operator_gtt")
 
     print("\nCreating users...")
-    create_user(session, "atm_user", "atm_pass123", [gamma_id, atm_role_id])
-    create_user(session, "gtt_user", "gtt_pass123", [gamma_id, gtt_role_id])
+    create_user(session, "atm_user", "atm_pass123", [alpha_id, sqllib_id, atm_role_id])
+    create_user(session, "gtt_user", "gtt_pass123", [alpha_id, sqllib_id, gtt_role_id])
 
     print("\nCreating RLS filters...")
     if dataset_ids:
