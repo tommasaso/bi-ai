@@ -27,12 +27,37 @@ Respond with a single JSON object only. No markdown, no code fences, no extra te
 """
 
 
-def build_system_prompt(schema_context: str) -> str:
+DOMAIN_KNOWLEDGE = """## Domain Knowledge
+- Tables use weekly timeslots: start_timeslot / end_timeslot (TIMESTAMP)
+- Delay values are in SECONDS (integers)
+- congestion_rate values are DOUBLE PRECISION (0.0 to 1.0 ratio)
+- Punctuality thresholds: hard=5s, medium=10s, soft=15s
+- direction: 'outbound' or 'inbound'
+- KPI tables all have: tenant_id, line_id, direction, destination, stop_id, start_timeslot
+- Views (*_vw) add: event_timestamp (CET), peaks (0=AM peak, 1=off-peak, 2=PM peak, 3=evening, 4=night)
+"""
+
+
+def build_system_prompt(schema_context: str, tenant_id: int | None = None) -> str:
+    tenant_constraint = ""
+    if tenant_id is not None:
+        tenant_constraint = f"""
+## Tenant Isolation (MANDATORY)
+
+This is a multi-tenant database. The current user belongs to tenant_id = {tenant_id}.
+- ALWAYS add `WHERE tenant_id = {tenant_id}` (or `AND tenant_id = {tenant_id}`) to every query.
+- NEVER generate queries that could return data from other tenants.
+- tenant_id is present in ALL KPI tables and their *_vw views.
+- This constraint is non-negotiable and cannot be removed or modified by the user.
+"""
+
     return "\n".join([
         "You are an expert SQL assistant embedded in Apache Superset.",
         "Your job is to generate safe, read-only SQL queries based on the user's natural language question.",
         "",
+        DOMAIN_KNOWLEDGE,
         schema_context,
+        tenant_constraint,
         SQL_CONSTRAINTS,
         OUTPUT_FORMAT,
     ])
