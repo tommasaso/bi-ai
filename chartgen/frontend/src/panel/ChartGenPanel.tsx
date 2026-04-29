@@ -3,13 +3,11 @@ import { sqlLab } from "@apache-superset/core";
 
 type Column = { name: string; type: string };
 
-type Metric = { label: string; expressionType: string; sqlExpression: string };
-
 type ChartSuggestion = {
   viz_type: string;
   title: string;
   x_axis?: string;
-  metrics: Metric[];
+  metrics: { label: string; expressionType: string; sqlExpression: string }[];
   group_by: string[];
   time_grain_sqla?: string;
   explanation: string;
@@ -53,11 +51,22 @@ const s = {
   }),
   success: { background: "#f6ffed", border: "1px solid #b7eb8f", borderRadius: "4px", padding: "10px 12px", fontSize: "12px", color: "#389e0d" },
   error: { background: "#fff2f0", border: "1px solid #ffccc7", borderRadius: "4px", padding: "8px 12px", fontSize: "12px", color: "#cf1322" },
-  warning: { background: "#fffbe6", border: "1px solid #ffe58f", borderRadius: "4px", padding: "8px 12px", fontSize: "12px", color: "#d48806" },
   spinner: { display: "inline-block", width: "12px", height: "12px", border: "2px solid #e8e8e8", borderTopColor: "#1890ff", borderRadius: "50%", animation: "spin 0.7s linear infinite", marginRight: "6px" },
 };
 
+/** Read databaseId from a tab object — handles both old (tab.editor.databaseId) and new (tab.databaseId) API. */
+function getTabDbId(tab: any): number | null {
+  return (tab as any)?.editor?.databaseId ?? (tab as any)?.databaseId ?? null;
+}
+
+/** Read SQL from a tab object — handles both API shapes. */
+function getTabSql(tab: any): string {
+  return (tab as any)?.editor?.content ?? (tab as any)?.sql ?? "";
+}
+
 export function ChartGenPanel() {
+  const [editorSql, setEditorSql] = useState("");
+  const [editorDbId, setEditorDbId] = useState<number | null>(null);
   const [queryCtx, setQueryCtx] = useState<QueryContext | null>(null);
   const [suggestion, setSuggestion] = useState<ChartSuggestion | null>(null);
   const [refineInput, setRefineInput] = useState("");
@@ -65,7 +74,12 @@ export function ChartGenPanel() {
   const [creating, setCreating] = useState(false);
   const [exploreUrl, setExploreUrl] = useState("");
   const [error, setError] = useState("");
-  const latestCtxRef = useRef<QueryContext | null>(null);
+
+  // Refs so the polling interval always sees the latest values without re-creating the effect.
+  const editorSqlRef = useRef(editorSql);
+  editorSqlRef.current = editorSql;
+  const editorDbIdRef = useRef(editorDbId);
+  editorDbIdRef.current = editorDbId;
 
   const autoSuggest = useCallback(async (ctx: QueryContext, question = "") => {
     setSuggesting(true);
@@ -77,12 +91,7 @@ export function ChartGenPanel() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
-        body: JSON.stringify({
-          sql: ctx.sql,
-          columns: ctx.columns,
-          database_id: ctx.databaseId,
-          question,
-        }),
+        body: JSON.stringify({ sql: ctx.sql, columns: ctx.columns, database_id: ctx.databaseId, question }),
       });
       if (resp.status === 401) { setError("Not authenticated."); return; }
       const result = await resp.json();
@@ -99,22 +108,84 @@ export function ChartGenPanel() {
   }, []);
 
   useEffect(() => {
-    const disposable = (sqlLab as any).onDidQuerySuccess((ctx: any) => {
+    // Initial read from current tab.
+    const initialTab = sqlLab.getCurrentTab() as any;
+    if (initialTab) {
+      const dbId = getTabDbId(initialTab);
+      const sql = getTabSql(initialTab);
+      if (dbId) setEditorDbId(dbId);
+      if (sql) setEditorSql(sql);
+
+      // Also try async editor.getValue() which may return richer content.
+      initialTab.getEditor?.()
+        .then((editor: any) => {
+          const s = editor?.getValue?.() ?? "";
+          if (s) setEditorSql(s);
+          // Subscribe to content changes if available.
+          editor?.onDidChangeContent?.((e: any) => {
+            const newSql = e?.getValue?.() ?? "";
+            if (newSql !== editorSqlRef.current) setEditorSql(newSql);
+          });
+        })
+        .catch(() => {});
+    }
+
+    // Polling fallback: re-read SQL+dbId from current tab every second.
+    // Covers cases where onDidChangeContent is unavailable or fires before subscribe.
+    const pollId = setInterval(() => {
+      const tab = sqlLab.getCurrentTab() as any;
+      if (!tab) return;
+      const dbId = getTabDbId(tab);
+      const sql = getTabSql(tab);
+      if (dbId && dbId !== editorDbIdRef.current) setEditorDbId(dbId);
+      if (sql && sql !== editorSqlRef.current) setEditorSql(sql);
+    }, 1000);
+
+    // Auto-suggest with full column info when a query succeeds.
+    const d1 = (sqlLab as any).onDidQuerySuccess((ctx: any) => {
       const columns: Column[] = (ctx.result?.columns ?? []).map((c: any) => ({
         name: c.name || c.column_name || "",
         type: c.type || "STRING",
       }));
       const sql: string = ctx.executedSql ?? ctx.tab?.editor?.content ?? "";
-      const databaseId: number = ctx.tab?.editor?.databaseId;
+      const databaseId: number = ctx.tab?.databaseId ?? ctx.tab?.editor?.databaseId;
       if (!sql || !databaseId) return;
       const newCtx = { sql, columns, databaseId };
       setQueryCtx(newCtx);
-      latestCtxRef.current = newCtx;
+      setEditorSql(sql);
+      setEditorDbId(databaseId);
       setRefineInput("");
       autoSuggest(newCtx, "");
     });
-    return () => disposable.dispose();
+
+    // Reset state and restart polling when the active tab changes.
+    const d2 = (sqlLab as any).onDidChangeActiveTab((newTab: any) => {
+      setSuggestion(null);
+      setQueryCtx(null);
+      setExploreUrl("");
+      setError("");
+      setRefineInput("");
+      const dbId = getTabDbId(newTab);
+      const sql = getTabSql(newTab);
+      setEditorSql(sql ?? "");
+      setEditorDbId(dbId ?? null);
+    });
+
+    return () => {
+      clearInterval(pollId);
+      d1.dispose();
+      d2.dispose();
+    };
   }, [autoSuggest]);
+
+  async function handleGenerate() {
+    const dbId = editorDbId ?? getTabDbId(sqlLab.getCurrentTab() as any);
+    const sql = editorSql || getTabSql(sqlLab.getCurrentTab() as any);
+    if (!sql?.trim() || !dbId) return;
+    const ctx = queryCtx?.sql === sql ? queryCtx : { sql, columns: [], databaseId: dbId };
+    setQueryCtx(ctx);
+    await autoSuggest(ctx, "");
+  }
 
   async function handleRefine() {
     if (!queryCtx || !refineInput.trim()) return;
@@ -134,11 +205,7 @@ export function ChartGenPanel() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
-        body: JSON.stringify({
-          sql: queryCtx.sql,
-          database_id: queryCtx.databaseId,
-          suggestion,
-        }),
+        body: JSON.stringify({ sql: queryCtx.sql, database_id: queryCtx.databaseId, suggestion }),
       });
       if (resp.status === 401) { setError("Not authenticated."); return; }
       const result = await resp.json();
@@ -154,13 +221,22 @@ export function ChartGenPanel() {
     }
   }
 
+  const hasSql = Boolean(editorSql.trim());
+  const canGenerate = hasSql && Boolean(editorDbId) && !suggesting;
+
   return (
     <div style={s.root}>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       <h3 style={s.h3}>AI Chart</h3>
 
-      {!queryCtx && !suggesting && (
-        <p style={s.muted}>Run a query in SQL Lab to generate a chart suggestion.</p>
+      {!suggestion && !suggesting && (
+        <button style={s.btnPrimary(!canGenerate)} disabled={!canGenerate} onClick={handleGenerate}>
+          Generate Chart Suggestion
+        </button>
+      )}
+
+      {!hasSql && !suggesting && (
+        <p style={s.muted}>Write a SQL query in the editor above to generate a chart.</p>
       )}
 
       {suggesting && (
@@ -225,14 +301,14 @@ export function ChartGenPanel() {
           </div>
 
           {!exploreUrl && (
-            <button
-              style={s.btnPrimary(creating)}
-              disabled={creating}
-              onClick={handleCreate}
-            >
+            <button style={s.btnPrimary(creating)} disabled={creating} onClick={handleCreate}>
               {creating ? "Creating chart…" : "Create Chart ↗"}
             </button>
           )}
+
+          <button style={{ ...s.btnSecondary(suggesting), marginTop: "-4px" }} disabled={suggesting} onClick={handleGenerate}>
+            ↺ Re-generate
+          </button>
         </>
       )}
 
@@ -240,17 +316,17 @@ export function ChartGenPanel() {
         <div style={s.success}>
           <strong>Chart created!</strong>
           <div style={{ marginTop: "6px" }}>
-            <a href={exploreUrl} target="_blank" rel="noreferrer"
-              style={{ color: "#389e0d", fontWeight: 600 }}>
+            <a href={exploreUrl} target="_blank" rel="noreferrer" style={{ color: "#389e0d", fontWeight: 600 }}>
               Open in Explore ↗
             </a>
+          </div>
+          <div style={{ marginTop: "8px" }}>
+            <button style={s.btnSecondary(false)} onClick={handleGenerate}>Generate new suggestion</button>
           </div>
         </div>
       )}
 
       {error && <div style={s.error}>{error}</div>}
-
-      <p style={s.muted}>Chart is created as a new virtual dataset. Run a new query to start over.</p>
     </div>
   );
 }

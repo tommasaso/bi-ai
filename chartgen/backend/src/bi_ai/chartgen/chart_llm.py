@@ -11,14 +11,14 @@ Given a SQL query and its result columns, you suggest the best chart configurati
 
 ## Available chart types and when to use them
 - echarts_timeseries_line: time series with a date/timestamp column, shows trends over time
-- echarts_bar: categorical comparisons, rankings, distributions (non-time x-axis)
+- echarts_timeseries_bar: categorical comparisons, rankings, distributions (non-time x-axis)
 - pie: part-of-whole proportions (max 2-3 group_by columns, one metric)
 - table: raw tabular data, many columns, no clear single metric
 - big_number_total: single aggregated number (COUNT, SUM, AVG with no group_by)
 
 ## Rules
 - If the query has a timestamp/date column AND a metric → echarts_timeseries_line
-- If the query groups by a categorical column (line_id, direction, etc.) with a metric → echarts_bar
+- If the query groups by a categorical column (line_id, direction, etc.) with a metric → echarts_timeseries_bar
 - If the query has proportions or percentages → pie
 - If the query returns one aggregated number → big_number_total
 - Otherwise → table
@@ -33,14 +33,20 @@ Respond with a single JSON object only. No markdown, no code fences.
   "status": "success",
   "viz_type": "echarts_timeseries_line",
   "title": "Short descriptive title",
+  "source_table": "goldlayer.delay_vw",
   "x_axis": "column_name_or_null",
   "metrics": [
     { "label": "Human label", "expressionType": "SQL", "sqlExpression": "AVG(mean_in_value)" }
   ],
   "group_by": ["line_id"],
+  "adhoc_filters": ["tenant_id = 1", "event_timestamp >= CURRENT_DATE - INTERVAL '30 DAYS'"],
   "time_grain_sqla": "P1W",
   "explanation": "One sentence explaining why this chart type fits."
 }
+
+## Additional rules for source_table and adhoc_filters
+- source_table: the schema-qualified table from the FROM clause (e.g. "goldlayer.delay_vw"). Use the main table; ignore CTEs or subqueries.
+- adhoc_filters: each AND-separated condition from the WHERE clause as a separate string. Omit tenant_id filters if row-level security is expected to handle them, but include them if explicit in the SQL. Empty list if no WHERE clause.
 """
 
 
@@ -84,6 +90,8 @@ def suggest_chart(sql: str, columns: list[dict], question: str = "") -> dict:
         result.setdefault("metrics", [])
         result.setdefault("group_by", [])
         result.setdefault("x_axis", None)
+        result.setdefault("source_table", None)
+        result.setdefault("adhoc_filters", [])
         result.setdefault("time_grain_sqla", "P1D")
         result.setdefault("explanation", "")
         return result

@@ -7,10 +7,10 @@
   "permissions": ["can_read"],
   "id": "bi-ai.chartgen",
   "frontend": {
-    "remoteEntry": "remoteEntry.b0dcb2fb1665841ec128.js",
+    "remoteEntry": "remoteEntry.852b705816efbff7f1d0.js",
     "moduleFederation": {
       "exposes": ["./index"],
-      "filename": "remoteEntry.b0dcb2fb1665841ec128.js",
+      "filename": "remoteEntry.852b705816efbff7f1d0.js",
       "shared": {},
       "remotes": {}
     },
