@@ -1,0 +1,27 @@
+{
+  "publisher": "bi-ai",
+  "name": "chartgen",
+  "displayName": "BI-AI Chart Generator",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "permissions": ["can_read"],
+  "frontend": {
+    "moduleFederation": {
+      "name": "bi_ai_chartgen",
+      "exposes": { "./index": "./src/index.tsx" }
+    },
+    "contributions": {
+      "views": [
+        {
+          "id": "bi-ai.chartgen.panel",
+          "name": "AI Chart",
+          "extensionPoint": "sqllab.rightSidebar"
+        }
+      ]
+    }
+  },
+  "backend": {
+    "entryPoint": "bi_ai.chartgen.entrypoint",
+    "files": ["src/bi_ai/chartgen/**/*.py"]
+  }
+}
