@@ -157,6 +157,11 @@ def create_chart(sql: str, database_id: int, suggestion: dict) -> dict:
     dataset = _find_existing_dataset(db, SqlaTable, source_table, database_id)
 
     if dataset is None:
+        # Virtual dataset — the SQL already embeds WHERE conditions.
+        # adhoc_filters would reference columns absent from the SELECT output,
+        # causing "column does not exist" in Superset Explore.
+        suggestion = {**suggestion, "adhoc_filters": []}
+
         # Fallback: create a virtual dataset from the SQL
         sql_hash = hashlib.md5(sql.encode()).hexdigest()[:8]
         dataset_name = f"{title[:60]} [{sql_hash}]"

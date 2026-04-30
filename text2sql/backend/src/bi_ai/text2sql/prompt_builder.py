@@ -28,13 +28,44 @@ Respond with a single JSON object only. No markdown, no code fences, no extra te
 
 
 DOMAIN_KNOWLEDGE = """## Domain Knowledge
-- Tables use weekly timeslots: start_timeslot / end_timeslot (TIMESTAMP)
-- Delay values are in SECONDS (integers)
-- congestion_rate values are DOUBLE PRECISION (0.0 to 1.0 ratio)
-- Punctuality thresholds: hard=5s, medium=10s, soft=15s
-- direction: 'outbound' or 'inbound'
-- KPI tables all have: tenant_id, line_id, direction, destination, stop_id, start_timeslot
-- Views (*_vw) add: event_timestamp (CET), peaks (0=AM peak, 1=off-peak, 2=PM peak, 3=evening, 4=night)
+
+### Common columns in all KPI views
+- `tenant_id` (bigint) — do NOT add to your SQL; the system injects it automatically
+- `line_id` (varchar) — e.g. 'M1', 'M2', '4', '9'
+- `line_name` (varchar) — e.g. 'Metro M1', 'Bus 9'
+- `direction` (varchar) — 'outbound' or 'inbound'
+- `destination` (varchar) — terminus stop name
+- `event_timestamp` (timestamptz) — start of the weekly aggregation period (UTC)
+- `peaks` (int) — 0=AM peak, 1=off-peak, 2=PM peak, 3=evening, 4=night
+
+### delay_vw — delay statistics per stop/week
+- `stop_id`, `stop_name` — individual stop
+- `mean_out_value`, `mean_in_value` — average delay in SECONDS (integer)
+- `min_*/max_*/dev_std_*_value` — min/max/stddev delay in SECONDS
+
+### punctuality_index_vw — punctuality per stop/week
+- `stop_id`, `stop_name` — individual stop
+- `punctuality_soft`, `punctuality_medium`, `punctuality_hard` — ratio (0.0–1.0) of trips on time
+  (soft=15s threshold, medium=10s, hard=5s; e.g. 0.77 means 77% of trips on time)
+- `hard_in/out`, `medium_in/out`, `soft_in/out`, `outside_th_in/out` — trip counts per threshold bucket
+
+### congestion_rate_vw — vehicle load per stop/week
+- `stop_id`, `stop_name`
+- `mean_congestion_rate` — average load ratio (0.0–1.0); 1.0 = full capacity
+- `min/max/dev_std_congestion_rate`
+
+### ridership_vw — passenger counts per stop/week
+- `stop_id`, `stop_name`
+- `tot_boarding`, `tot_alighting`, `tot_ridership`, `avg_ridership`, `max_ridership` (integer)
+
+### number_of_trips_vw — trip completion per line/week (no stop_id column)
+- `expected_trips`, `completed_trips`, `late_completed_trips`, `early_completed_trips` (integer)
+- `completion_rate` (double) — ratio of completed to expected trips
+
+### PostgreSQL time filtering examples
+- Last 30 days:    `event_timestamp >= NOW() - INTERVAL '30 days'`
+- Current month:   `DATE_TRUNC('month', event_timestamp) = DATE_TRUNC('month', NOW())`
+- Specific month:  `event_timestamp >= '2026-04-01' AND event_timestamp < '2026-05-01'`
 """
 
 

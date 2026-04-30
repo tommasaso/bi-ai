@@ -1,19 +1,27 @@
-version: "3.8"
-
 services:
   superset:
     image: apache/superset:latest
-    container_name: superset
+    container_name: superset-poc
     ports:
       - "8088:8088"
     environment:
       - SUPERSET_SECRET_KEY=supersecret_poc_key_change_in_prod
       - TALISMAN_ENABLED=false
       - SUPERSET_CONFIG_PATH=/app/pythonpath/superset_config.py
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LLM_BASE_URL=${LLM_BASE_URL:-https://openrouter.ai/api/v1}
+      - LLM_MODEL=${LLM_MODEL:-qwen/qwen3-coder}
     volumes:
       - ./demo_transport.db:/app/demo_transport.db
       - ./superset_config.py:/app/pythonpath/superset_config.py
+      - ../text2sql/backend/src:/app/extensions/text2sql/src:ro
+      - ../text2sql/frontend/dist:/app/extensions/text2sql/dist:ro
+      - ../chartgen/backend/src:/app/extensions/chartgen/src:ro
+      - ./vendor:/app/extensions/vendor:ro
       - superset_home:/app/superset_home
+    networks:
+      - default
+      - goldlayer
     command: >
       sh -c "
         superset db upgrade &&
@@ -24,3 +32,9 @@ services:
 
 volumes:
   superset_home:
+
+networks:
+  default:
+  goldlayer:
+    external: true
+    name: 1_3_0_main-net

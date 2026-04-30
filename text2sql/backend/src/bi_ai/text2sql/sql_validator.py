@@ -56,7 +56,7 @@ def ensure_tenant_filter(sql: str, tenant_id: int) -> str:
         return normalized
 
 
-def validate_sql(sql: str, allowed_tables: set[str] | None = None, dialect: str = "sqlite", tenant_id: int | None = None) -> ValidationResult:
+def validate_sql(sql: str, allowed_tables: set[str] | None = None, dialect: str = "postgres", tenant_id: int | None = None) -> ValidationResult:
     if not sql or not sql.strip():
         return ValidationResult(is_valid=False, errors=["SQL is empty."])
 
@@ -92,8 +92,14 @@ def validate_sql(sql: str, allowed_tables: set[str] | None = None, dialect: str 
             normalized = ensure_tenant_filter(normalized, tenant_id)
 
         if allowed_tables is not None:
+            # Build a set of both qualified (schema.table) and unqualified names
+            allowed_flat: set[str] = set()
+            for t in allowed_tables:
+                tl = t.lower()
+                allowed_flat.add(tl)
+                allowed_flat.add(tl.split(".")[-1])
             referenced = {t.name.lower() for t in parsed.find_all(sqlglot.exp.Table) if t.name}
-            unknown = referenced - {t.lower() for t in allowed_tables}
+            unknown = referenced - allowed_flat
             if unknown:
                 errors.append(f"Query references unknown table(s): {', '.join(unknown)}.")
 
